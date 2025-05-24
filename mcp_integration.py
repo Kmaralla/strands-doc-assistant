@@ -8,7 +8,7 @@ from typing import Dict, Any, List, Optional
 import json
 import requests
 
-from strands.tools import Tool
+from strands.tools.tools import PythonAgentTool as Tool
 
 
 class MCPTool(Tool):
@@ -23,36 +23,53 @@ class MCPTool(Tool):
         """
         self.mcp_server_url = mcp_server_url
         super().__init__(
-            name="mcp_tool",
-            description="Interact with MCP servers to extend agent capabilities",
-            parameters={
-                "type": "object",
-                "properties": {
-                    "tool_name": {
-                        "type": "string",
-                        "description": "Name of the MCP tool to call"
-                    },
-                    "parameters": {
+            tool_name="mcp_tool",
+            tool_spec={
+                "name": "mcp_tool",
+                "description": "Interact with MCP servers to extend agent capabilities",
+                "inputSchema": {
+                    "json": {
                         "type": "object",
-                        "description": "Parameters to pass to the MCP tool"
+                        "properties": {
+                            "tool_name": {
+                                "type": "string",
+                                "description": "Name of the MCP tool to call"
+                            },
+                            "parameters": {
+                                "type": "object",
+                                "description": "Parameters to pass to the MCP tool"
+                            }
+                        },
+                        "required": ["tool_name", "parameters"]
                     }
-                },
-                "required": ["tool_name", "parameters"]
-            }
+                }
+            },
+            callback=self._execute
         )
     
-    def _execute(self, tool_name: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
+    def _execute(self, tool_use, **kwargs) -> Dict[str, Any]:
         """
         Execute a call to an MCP tool.
         
         Args:
-            tool_name: Name of the MCP tool to call
-            parameters: Parameters to pass to the tool
+            tool_use: The tool use request
+            **kwargs: Additional keyword arguments
             
         Returns:
             Response from the MCP tool
         """
         try:
+            # Extract parameters from tool_use
+            tool_name = tool_use.get("input", {}).get("tool_name", "")
+            parameters = tool_use.get("input", {}).get("parameters", {})
+            
+            if not tool_name:
+                return {
+                    "toolUseId": tool_use.get("toolUseId", "unknown"),
+                    "status": "error",
+                    "content": [{"text": "No tool name provided"}]
+                }
+            
             # Construct the MCP request
             request_data = {
                 "tool": tool_name,
@@ -68,14 +85,23 @@ class MCPTool(Tool):
             
             # Check if the request was successful
             if response.status_code == 200:
-                return response.json()
+                return {
+                    "toolUseId": tool_use.get("toolUseId", "unknown"),
+                    "status": "success",
+                    "content": [{"text": json.dumps(response.json(), indent=2)}]
+                }
             else:
                 return {
-                    "error": f"MCP request failed with status code {response.status_code}",
-                    "details": response.text
+                    "toolUseId": tool_use.get("toolUseId", "unknown"),
+                    "status": "error",
+                    "content": [{"text": f"MCP request failed with status code {response.status_code}: {response.text}"}]
                 }
         except Exception as e:
-            return {"error": f"MCP tool execution failed: {str(e)}"}
+            return {
+                "toolUseId": tool_use.get("toolUseId", "unknown"),
+                "status": "error",
+                "content": [{"text": f"MCP tool execution failed: {str(e)}"}]
+            }
 
 
 class MCPToolDiscovery(Tool):
@@ -90,19 +116,29 @@ class MCPToolDiscovery(Tool):
         """
         self.mcp_server_url = mcp_server_url
         super().__init__(
-            name="mcp_discover",
-            description="Discover available MCP tools on connected servers",
-            parameters={
-                "type": "object",
-                "properties": {},
-                "required": []
-            }
+            tool_name="mcp_discover",
+            tool_spec={
+                "name": "mcp_discover",
+                "description": "Discover available MCP tools on connected servers",
+                "inputSchema": {
+                    "json": {
+                        "type": "object",
+                        "properties": {},
+                        "required": []
+                    }
+                }
+            },
+            callback=self._execute
         )
     
-    def _execute(self) -> Dict[str, Any]:
+    def _execute(self, tool_use, **kwargs) -> Dict[str, Any]:
         """
         Discover available MCP tools.
         
+        Args:
+            tool_use: The tool use request
+            **kwargs: Additional keyword arguments
+            
         Returns:
             List of available MCP tools
         """
@@ -115,14 +151,23 @@ class MCPToolDiscovery(Tool):
             
             # Check if the request was successful
             if response.status_code == 200:
-                return {"tools": response.json()}
+                return {
+                    "toolUseId": tool_use.get("toolUseId", "unknown"),
+                    "status": "success",
+                    "content": [{"text": json.dumps(response.json(), indent=2)}]
+                }
             else:
                 return {
-                    "error": f"MCP discovery failed with status code {response.status_code}",
-                    "details": response.text
+                    "toolUseId": tool_use.get("toolUseId", "unknown"),
+                    "status": "error",
+                    "content": [{"text": f"MCP discovery failed with status code {response.status_code}: {response.text}"}]
                 }
         except Exception as e:
-            return {"error": f"MCP tool discovery failed: {str(e)}"}
+            return {
+                "toolUseId": tool_use.get("toolUseId", "unknown"),
+                "status": "error",
+                "content": [{"text": f"MCP tool discovery failed: {str(e)}"}]
+            }
 
 
 # Example of how to register MCP tools with the agent
@@ -134,5 +179,5 @@ def register_mcp_tools(tool_registry, mcp_server_url: str = "http://localhost:80
         tool_registry: The agent's tool registry
         mcp_server_url: URL of the MCP server
     """
-    tool_registry.register(MCPTool(mcp_server_url))
-    tool_registry.register(MCPToolDiscovery(mcp_server_url))
+    tool_registry.register_tool(MCPTool(mcp_server_url))
+    tool_registry.register_tool(MCPToolDiscovery(mcp_server_url))

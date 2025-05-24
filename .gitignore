@@ -24,6 +24,8 @@ var/
 venv/
 ENV/
 env/
+strands-env/
+.venv/
 
 # IDE files
 .idea/
@@ -40,3 +42,11 @@ docs_index.json
 .DS_Store
 .AppleDouble
 .LSOverride
+
+# AWS
+.aws/
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
